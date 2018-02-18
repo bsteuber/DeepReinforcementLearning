@@ -79,9 +79,9 @@ while 1:
     iteration += 1
     reload(lg)
     reload(config)
-    
+
     print('ITERATION NUMBER ' + str(iteration))
-    
+
     lg.logger_main.info('BEST PLAYER VERSION: %d', best_player_version)
     print('BEST PLAYER VERSION ' + str(best_player_version))
 
@@ -89,9 +89,9 @@ while 1:
     print('SELF PLAYING ' + str(config.EPISODES) + ' EPISODES...')
     _, memory, _, _ = playMatches(best_player, best_player, config.EPISODES, lg.logger_main, turns_until_tau0 = config.TURNS_UNTIL_TAU0, memory = memory)
     print('\n')
-    
+
     memory.clear_stmemory()
-    
+
     if len(memory.ltmemory) >= config.MEMORY_SIZE:
 
         ######## RETRAINING ########
@@ -100,14 +100,14 @@ while 1:
         print('')
 
         if iteration % 5 == 0:
-            pickle.dump( memory, open( run_folder + "memory/memory" + iteration + ".p", "wb" ) )
+            pickle.dump( memory, open( run_folder + "memory/memory" + str(iteration) + ".p", "wb" ) )
 
         lg.logger_memory.info('====================')
         lg.logger_memory.info('NEW MEMORIES')
         lg.logger_memory.info('====================')
-        
+
         memory_samp = random.sample(memory.ltmemory, min(1000, len(memory.ltmemory)))
-        
+
         for s in memory_samp:
             current_value, current_probs, _ = current_player.get_preds(s['state'])
             best_value, best_probs, _ = best_player.get_preds(s['state'])
@@ -122,7 +122,7 @@ while 1:
             lg.logger_memory.info('INPUT TO MODEL: %s', current_player.model.convertToModelInput(s['state']))
 
             s['state'].render(lg.logger_memory)
-            
+
         ######## TOURNAMENT ########
         print('TOURNAMENT...')
         scores, _, points, sp_scores = playMatches(best_player, current_player, config.EVAL_EPISODES, lg.logger_tourney, turns_until_tau0 = 0, memory = None)
