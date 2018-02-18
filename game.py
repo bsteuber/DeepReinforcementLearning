@@ -1,4 +1,5 @@
 import numpy as np
+import loggers as lg
 import logging
 
 from enum import Enum
@@ -23,6 +24,11 @@ RIGHT_CHICKEN=-2
 RIGHT_GIRAFFE=-3
 RIGHT_ELEPHANT=-4
 RIGHT_CHICK=-5
+
+ALL_PIECES=[
+        LEFT_LION, LEFT_CHICKEN, LEFT_GIRAFFE, LEFT_ELEPHANT, LEFT_CHICK,
+        RIGHT_LION, RIGHT_CHICKEN, RIGHT_GIRAFFE, RIGHT_ELEPHANT, RIGHT_CHICK
+]
 
 PIECE_MAPPING = {
         EMPTY:         '   ',
@@ -61,30 +67,30 @@ def empty_captures():
                 RIGHT_CHICK:   0
         }
 
-
 class Game:
 
 	def __init__(self):
                 self.reset()
-		# self.actionSpace = np.array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], dtype=np.int)
-		# self.grid_shape = (3,4)
-		# self.input_shape = (11,3,4)
+		self.grid_shape = (3,4)
+		self.input_shape = (20,3,4) # for each field and piece type, store if the piece is there and the number of pieces in hand
+                self.pieces = {'1':'L', '0': '-', '-1':'R'}
 		self.name = 'animalshogi'
-		# self.state_size = len(self.gameState.binary)
-		# self.action_size = len(self.actionSpace)
+		self.state_size = len(self.gameState.binary)
+                self.action_shape = (12+3,12) # 3 extra for chicks, elephants, giraffe's in hand
+		self.action_size = 15*12
 
 	def reset(self):
 		self.gameState = GameState(np.array([
                         [LEFT_ELEPHANT, EMPTY,      EMPTY,       RIGHT_GIRAFFE],
                         [LEFT_LION,     LEFT_CHICK, RIGHT_CHICK, RIGHT_LION],
                         [LEFT_GIRAFFE,  EMPTY,      EMPTY,       RIGHT_ELEPHANT]
-                ], dtype=np.int), empty_captures() , LEFT)
+                ], dtype=np.int), empty_captures() , LEFT, 0)
 		return self.gameState
 
 	def step(self, action):
-		next_state = self.gameState.takeAction(action)
+		next_state, value, done = self.gameState.takeAction(action)
 		self.gameState = next_state
-		return next_state
+                return ((next_state, value, done, None))
 
 	def identities(self, state, actionValues):
 		identities = [(state,actionValues)]
@@ -124,13 +130,21 @@ PIECE_MOVEMENTS = {
 }
 
 class GameState():
-	def __init__(self, board, captures, playerTurn):
+	def __init__(self, board, captures, playerTurn, moveNumber):
+                self.moveNumber = moveNumber
 		self.board = board
                 self.captures = captures
 		self.playerTurn = playerTurn
 		self.id = self._convertStateToId()
-		self.allowedActions = self._allowedActions()
-                self.winner = self._winner()
+                self.binary = self._binary()
+
+                self.pieces = {'1':'L', '0': '-', '-1':'R'}
+
+                self.allowedActions = self._allowedActions()
+                self.result = self._result()
+
+                currentPlayerWin = self.result[1] * self.playerTurn
+                self.score = (currentPlayerWin, -currentPlayerWin)
 
         def isEmpty(self, y, x):
                 return self.board[y][x] == EMPTY
@@ -161,50 +175,109 @@ class GameState():
                                 elif piece == RIGHT_CHICK:
                                         insert_moves = filter(lambda m: m[1][1] != 0, insert_moves)
                                 allowed += insert_moves
-		return allowed
+		return map(lambda move: self.moveToInt(move), allowed)
 
-	# def _binary(self):
-	# 	currentplayer_position = np.zeros(len(self.board), dtype=np.int)
-	# 	currentplayer_position[self.board==self.playerTurn] = 1
+        def _piece_for_current_player(self, piece):
+                if self.playerTurn == LEFT:
+                        return piece
+                else:
+                        return -piece
 
-	# 	other_position = np.zeros(len(self.board), dtype=np.int)
-	# 	other_position[self.board==-self.playerTurn] = 1
+        def _point_for_current_player(self, y, x):
+                if self.playerTurn == LEFT:
+                        return (y, x)
+                else:
+                        return (2-y, 3-x)
 
-	# 	position = np.append(currentplayer_position,other_position)
+	def _binary(self):
+                bin_array = []
+                for piece in ALL_PIECES:
+                        real_piece = self._piece_for_current_player(piece)
+                        position = np.zeros(12, dtype=np.int)
+                        for y in range(3):
+                                for x in range(4):
+                                        (real_y, real_x) = self._point_for_current_player(y, x)
+                                        if self.board[real_y][real_x]==real_piece:
+                                                position[y*4+x]=1
+                        captures = np.full(12, self.captures.get(real_piece) or 0, dtype=np.int)
+                        bin_array = np.append(bin_array, position)
+                        bin_array = np.append(bin_array, captures)
+                return bin_array
 
-	# 	return (position)
+        def pointToInt(self, y, x):
+                ret = y*4+x
+                if self.playerTurn == LEFT:
+                        return ret
+                else:
+                        return 11-ret
+
+        def intToPoint(self, i):
+                realI = i if self.playerTurn == LEFT else 11-i
+                y = realI // 4
+                x = realI % 4
+                return (y, x)
+
+        def moveToInt(self, move):
+                [[sourceY, sourceX], [targetY, targetX]] = move
+                if sourceY != -1:
+                        sourceI = self.pointToInt(sourceY, sourceX)
+                else:
+                        sourceI = {
+                                LEFT_CHICK: 12,
+                                RIGHT_CHICK: 12,
+                                LEFT_GIRAFFE: 13,
+                                RIGHT_GIRAFFE: 13,
+                                LEFT_ELEPHANT: 14,
+                                RIGHT_ELEPHANT: 14
+                        }.get(sourceX)
+                targetI = self.pointToInt(targetY, targetX)
+                return sourceI*12 + targetI
+
+        def intToMove(self, i):
+                sourceI = i // 12
+                targetI = i % 12
+                if sourceI < 12:
+                        sourceP = self.intToPoint(sourceI)
+                else:
+                        if self.playerTurn == LEFT:
+                                piece = {
+                                        12: LEFT_CHICK,
+                                        13: LEFT_GIRAFFE,
+                                        14: LEFT_ELEPHANT
+                                }.get(sourceI)
+                        else:
+                                piece = {
+                                        12: RIGHT_CHICK,
+                                        13: RIGHT_GIRAFFE,
+                                        14: RIGHT_ELEPHANT
+                                }.get(sourceI)
+                        sourceP = (-1, piece)
+                targetP = self.intToPoint(targetI)
+                return (sourceP, targetP)
 
 	def _convertStateToId(self):
-                id =
-	# 	player1_position = np.zeros(len(self.board), dtype=np.int)
-	# 	player1_position[self.board==1] = 1
+                return str(self.board) + str(self.captures)
 
-	# 	other_position = np.zeros(len(self.board), dtype=np.int)
-	# 	other_position[self.board==-1] = 1
-
-	# 	position = np.append(player1_position,other_position)
-
-	# 	id = ''.join(map(str,position))
-
-	# 	return id
-
-	def _winner(self):
+	def _result(self):
+                if self.moveNumber > 150:
+                        return (1, 0)
                 if self.captures.get(LEFT_LION) > 0:
-                        return LEFT
+                        return (1, LEFT)
                 elif self.captures.get(RIGHT_LION) > 0:
-                        return RIGHT
+                        return (1, RIGHT)
 		else:
                         for y in range(3):
                                 if self.board[y][3] == LEFT_LION and self.playerTurn == LEFT:
-                                        return LEFT
+                                        return (1, LEFT)
                                 elif self.board[y][0] == RIGHT_LION and self.playerTurn == RIGHT:
-                                        return RIGHT
-                        return 0
+                                        return (1, RIGHT)
+                        return (0, 0)
 
 	def takeAction(self, action):
+                move = self.intToMove(action)
                 newBoard = np.array(self.board)
                 newCaptures = self.captures.copy()
-                source, target = action
+                source, target = move
                 sourceY, sourceX = source
                 targetY, targetX = target
                 isNotInsert = sourceY != -1
@@ -228,9 +301,10 @@ class GameState():
                                 capturedPiece = RIGHT_CHICK
                         newCaptures[capturedPiece]+=1
 
-		newState = GameState(newBoard, newCaptures, -self.playerTurn)
-
-		return newState
+		newState = GameState(newBoard, newCaptures, -self.playerTurn, self.moveNumber + 1)
+                current_value = newState.score[0]
+                done = newState.result[0] != 0
+		return (newState, current_value, done)
 
 	def render(self, logger):
 		for y in range(3):
@@ -242,7 +316,9 @@ class GameState():
                 for piece, count in self.captures.iteritems():
                         captures_line += count * render_piece(piece)
                 logger.info(captures_line)
-                if self.winner != 0:
-                        logger.info(render_player(self.winner) + " has won!")
+                if self.result[1] != 0:
+                        logger.info(render_player(self.result[1]) + " has won!")
+                elif self.result[0] != 0:
+                        logger.info(render_player("Draw game!"))
                 else:
                         logger.info(render_player(self.playerTurn) + " to play")

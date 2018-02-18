@@ -1,6 +1,7 @@
 import unittest
 import game as gm
 import loggers as lg
+import numpy as np
 from testfixtures import LogCapture
 
 class MyTest(unittest.TestCase):
@@ -155,3 +156,23 @@ class MyTest(unittest.TestCase):
         game.gameState = savedState
         game.step([[2, 3], [2, 2]])
         self.assertEqual(game.gameState.winner, gm.LEFT)
+
+    def test_id(self):
+        id = gm.Game().gameState.id
+        print("\nID: " + id)
+
+    def test_binary(self):
+        game = gm.Game()
+        res = np.reshape(game.gameState.binary, (10, 2, 3, 4))
+        self.assertEqual(res[0][0][1][0], 1)
+        self.assertEqual(res[4][0][1][1], 1)
+        game.step([[1, 1], [1, 2]])
+        res = np.reshape(game.gameState.binary, (10, 2, 3, 4))
+        self.assertEqual(res[9][0][1][2], 0)
+        self.assertEqual(res[9][0][1][1], 1)
+        self.assertEqual(res[9][1][1][2], 1)
+
+    def test_move_ints(self):
+        state = gm.Game().gameState
+        for i in range(15*12):
+            self.assertEqual(i, state.moveToInt(state.intToMove(i)))
