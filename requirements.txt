@@ -1,0 +1,15 @@
+# these are all the dependencies which you need to run this stuff.
+# pip2.7 install -r requirements.txt
+jupyter
+keras
+jedi
+testfixtures
+pytest-watch
+h5py
+pydot
+matplotlib
+keras-utilities
+tensorflow
+graphviz
+np_utils
+numpy
